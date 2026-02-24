@@ -3,13 +3,20 @@ import requests
 import os
 from openai import OpenAI
 
-TOKEN = os.getenv("TOKEN")
-client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# ====== TOKENS ======
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+OCR_API_KEY = os.getenv("OCR_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# ====== OPENAI CLIENT ======
+client_ai = OpenAI(api_key=OPENAI_API_KEY)
+
+# ====== DISCORD ======
 intents = discord.Intents.default()
 intents.message_content = True
 bot = discord.Client(intents=intents)
 
+# ====== PROMPT ======
 def literary_prompt(text):
     return f"""
 هذا نصٌّ كوري من إحدى المانهوا. أرجو ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
@@ -28,10 +35,12 @@ def literary_prompt(text):
 {text}
 """
 
+# ====== READY ======
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
+# ====== MESSAGE ======
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -39,7 +48,7 @@ async def on_message(message):
 
     if message.attachments:
         for attachment in message.attachments:
-            if attachment.filename.endswith(('png','jpg','jpeg')):
+            if attachment.filename.lower().endswith(('png','jpg','jpeg')):
 
                 await message.channel.send("📖 جارٍ استخراج النص...")
 
@@ -49,7 +58,7 @@ async def on_message(message):
                     "https://api.ocr.space/parse/image",
                     files={"file": img.content},
                     data={
-                        "apikey": "K85155133088957",
+                        "apikey": OCR_API_KEY,
                         "language": "kor"
                     }
                 )
@@ -89,4 +98,5 @@ async def on_message(message):
 
                 await message.channel.send(formatted)
 
-bot.run(TOKEN)
+# ====== RUN ======
+bot.run(DISCORD_TOKEN)
