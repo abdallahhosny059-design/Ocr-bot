@@ -1,3 +1,5 @@
-discord
-requests
+discord.py
 openai
+pytesseract
+pillow
+requests
