@@ -1,15 +1,13 @@
 import discord
 from discord.ext import commands
-import pytesseract
-from PIL import Image
 import requests
-from io import BytesIO
 import os
 from openai import OpenAI
 
 # ====== ENV ======
 TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OCR_API_KEY = os.getenv("OCR_API_KEY")
 
 if not TOKEN:
     raise ValueError("DISCORD_TOKEN is missing")
@@ -17,19 +15,15 @@ if not TOKEN:
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY is missing")
 
+if not OCR_API_KEY:
+    raise ValueError("OCR_API_KEY is missing")
+
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
 
 # ====== DISCORD ======
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-# ====== OCR ======
-def extract_text_from_image(image_url):
-    response = requests.get(image_url, timeout=20)
-    img = Image.open(BytesIO(response.content))
-    text = pytesseract.image_to_string(img, lang='eng+kor+jpn')
-    return text.strip()
 
 # ====== READY ======
 @bot.event
@@ -52,7 +46,26 @@ async def on_message(message):
         await message.channel.send("📖 جارٍ استخراج النص...")
 
         try:
-            extracted_text = extract_text_from_image(attachment.url)
+            img = requests.get(attachment.url, timeout=20)
+
+            ocr = requests.post(
+                "https://api.ocr.space/parse/image",
+                files={"file": img.content},
+                data={
+                    "apikey": OCR_API_KEY,
+                    "language": "kor"
+                },
+                timeout=30
+            )
+
+            result = ocr.json()
+
+            if "ParsedResults" not in result:
+                await message.channel.send("❌ فشل استخراج النص.")
+                return
+
+            extracted_text = result["ParsedResults"][0]["ParsedText"].strip()
+
         except Exception as e:
             print("OCR ERROR:", e)
             await message.channel.send("❌ حدث خطأ أثناء استخراج النص.")
