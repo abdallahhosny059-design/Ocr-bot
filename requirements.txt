@@ -1,4 +1,4 @@
 discord.py==2.3.2
 requests
 openai
-httpx==0.27.0
+httpx==0.26.0
