@@ -1,5 +1,2 @@
 [build]
 builder = "NIXPACKS"
-
-[phases.setup]
-nixPkgs = ["tesseract", "tesseract-lang"]
