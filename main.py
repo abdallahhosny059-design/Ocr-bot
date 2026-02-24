@@ -2,10 +2,9 @@ import discord
 import requests
 import os
 import openai
-import asyncio
 
 TOKEN = os.getenv("TOKEN")
-openai.api_key = os.getenv("OPENAI")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 intents = discord.Intents.default()
 intents.message_content = True
