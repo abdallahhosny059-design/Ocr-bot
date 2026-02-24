@@ -2,10 +2,12 @@ import discord
 from discord.ext import commands
 import requests
 import os
+import sys
 from openai import OpenAI
 
-# ================== ENV ==================
+sys.stdout.reconfigure(line_buffering=True)
 
+# ====== ENV ======
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OCR_API_KEY = os.getenv("OCR_API_KEY")
@@ -21,23 +23,21 @@ if not OCR_API_KEY:
 
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
 
-# ================== DISCORD ==================
-
+# ====== DISCORD ======
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================== READY ==================
-
+# ====== READY ======
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-# ================== MESSAGE ==================
-
+# ====== MESSAGE ======
 @bot.event
 async def on_message(message):
+    print("MESSAGE RECEIVED")
+
     if message.author == bot.user:
         return
 
@@ -46,59 +46,46 @@ async def on_message(message):
 
     for attachment in message.attachments:
 
-        # التأكد أنه صورة
-        if not attachment.content_type or not attachment.content_type.startswith("image"):
-            continue
-
         await message.channel.send("📖 جارٍ استخراج النص...")
 
         try:
-            # تحميل الصورة من ديسكورد
-            img_response = requests.get(attachment.url, timeout=20)
+            img = requests.get(attachment.url, timeout=20)
 
-            # إرسالها إلى OCR.Space بالشكل الصحيح
-            ocr_response = requests.post(
+            ocr = requests.post(
                 "https://api.ocr.space/parse/image",
-                files={"file": ("image.png", img_response.content)},
+                files={"file": ("image.png", img.content)},
                 data={
                     "apikey": OCR_API_KEY,
-                    "language": "eng",
+                    "language": "auto",
                     "isOverlayRequired": False
                 },
                 timeout=30
             )
 
-            result = ocr_response.json()
-            print("OCR RESPONSE:", result)
+            result = ocr.json()
+            print("OCR RESULT:", result)
 
-            # فشل من API
-            if result.get("IsErroredOnProcessing"):
+            if not result.get("ParsedResults"):
                 await message.channel.send("❌ فشل استخراج النص.")
                 return
 
-            parsed_results = result.get("ParsedResults")
-
-            if not parsed_results:
-                await message.channel.send("❌ فشل استخراج النص.")
-                return
-
-            extracted_text = parsed_results[0].get("ParsedText", "").strip()
-
-            if not extracted_text:
-                await message.channel.send("❌ لم يتم العثور على نص.")
-                return
+            extracted_text = result["ParsedResults"][0]["ParsedText"].strip()
 
         except Exception as e:
             print("OCR ERROR:", e)
             await message.channel.send("❌ حدث خطأ أثناء استخراج النص.")
             return
 
+        if not extracted_text:
+            await message.channel.send("❌ لم يتم العثور على نص.")
+            return
+
         await message.channel.send("🧠 جارٍ التعريب الأدبي...")
 
         try:
-            response = client_ai.responses.create(
+            response = client_ai.chat.completions.create(
                 model="gpt-4o-mini",
-                input=[
+                messages=[
                     {
                         "role": "system",
                         "content": """هذا نص من إحدى المانهوا. أرجو ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
@@ -113,14 +100,11 @@ async def on_message(message):
 اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية، مع الحفاظ على شعور النص وروحه.
 المرجو إخراج الترجمة فقط، خالية من الشروح والتعليقات."""
                     },
-                    {
-                        "role": "user",
-                        "content": extracted_text
-                    }
+                    {"role": "user", "content": extracted_text}
                 ]
             )
 
-            translated_text = response.output[0].content[0].text
+            translated_text = response.choices[0].message.content
             await message.channel.send(translated_text)
 
         except Exception as e:
@@ -129,6 +113,5 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ================== RUN ==================
-
-bot.run(DISCORD_TOKEN)
+# ====== RUN ======
+bot.run(DISCORD_TOKEN, log_handler=None)
