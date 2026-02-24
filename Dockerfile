@@ -1,17 +1,4 @@
-FROM python:3.10-slim
-
-# تثبيت tesseract واللغات المطلوبة
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-kor \
-    tesseract-ocr-jpn \
-    libgl1 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-COPY . .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-CMD ["python", "main.py"]
+discord.py==2.3.2
+requests
+openai==1.12.0
+httpx==0.27.0
