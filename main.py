@@ -52,8 +52,8 @@ async def on_message(message):
                     "https://api.ocr.space/parse/image",
                     files={"file": img.content},
                     data={
-                        "apikey": "helloworld",
-                        "language": "eng",
+                        "apikey": "K85155133088957",
+                        "language": "eng,kor,jpn,chs,cht",
                         "isOverlayRequired": False,
                         "OCREngine": 2
                     }
