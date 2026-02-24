@@ -2,43 +2,65 @@ import discord
 from discord.ext import commands
 import requests
 import os
-from io import BytesIO
-from PIL import Image
-import pytesseract
 from openai import OpenAI
 
-# ====== ENV VARIABLES ======
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+# ====== ENV ======
+TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OCR_API_KEY = os.getenv("OCR_API_KEY")
 
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN is missing")
-
+# تحذيرات لو المتغيرات مش موجودة
+if not TOKEN:
+    print("⚠️ تحذير: DISCORD_TOKEN غير موجود، البوت مش هيقدر يتصل بالديسكورد")
 if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is missing")
+    print("⚠️ تحذير: OPENAI_API_KEY غير موجود، الترجمة مش هتشتغل")
+if not OCR_API_KEY:
+    print("⚠️ تحذير: OCR_API_KEY غير موجود، استخراج النص مش هيشتغل")
 
 # ====== OPENAI CLIENT ======
-client_ai = OpenAI(api_key=OPENAI_API_KEY)
+client_ai = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
-# ====== DISCORD BOT ======
+# ====== DISCORD ======
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ====== OCR FUNCTION ======
+# ====== OCR SPACE ======
 def extract_text_from_image(image_url):
-    response = requests.get(image_url, timeout=20)
-    img = Image.open(BytesIO(response.content))
-    # دعم الإنجليزية والكورية واليابانية
-    text = pytesseract.image_to_string(img, lang='eng+kor+jpn')
-    return text.strip()
+    if not OCR_API_KEY:
+        return None
 
-# ====== READY EVENT ======
+    try:
+        img = requests.get(image_url, timeout=20)
+        ocr = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": img.content},
+            data={
+                "apikey": OCR_API_KEY,
+                "language": "eng"  # افتراضي للإنجليزي
+            },
+            timeout=30
+        )
+        result = ocr.json()
+        if result.get("IsErroredOnProcessing"):
+            print("OCR SPACE ERROR:", result.get("ErrorMessage"))
+            return None
+
+        parsed = result.get("ParsedResults")
+        if not parsed or len(parsed) == 0:
+            return None
+
+        return parsed[0].get("ParsedText", "").strip()
+    except Exception as e:
+        print("OCR EXCEPTION:", e)
+        return None
+
+# ====== READY ======
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-# ====== MESSAGE EVENT ======
+# ====== MESSAGE HANDLER ======
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -53,15 +75,13 @@ async def on_message(message):
 
         await message.channel.send("📖 جارٍ استخراج النص...")
 
-        try:
-            extracted_text = extract_text_from_image(attachment.url)
-        except Exception as e:
-            print("OCR ERROR:", e)
-            await message.channel.send("❌ حدث خطأ أثناء استخراج النص.")
+        extracted_text = extract_text_from_image(attachment.url)
+        if not extracted_text:
+            await message.channel.send("❌ لم يتم استخراج أي نص أو حدث خطأ في OCR.")
             continue
 
-        if not extracted_text:
-            await message.channel.send("❌ لم يتم العثور على نص.")
+        if not client_ai:
+            await message.channel.send("⚠️ مفتاح OpenAI مش موجود، الترجمة مش هتشتغل.")
             continue
 
         await message.channel.send("🧠 جارٍ التعريب الأدبي...")
@@ -87,15 +107,16 @@ async def on_message(message):
                     {"role": "user", "content": extracted_text}
                 ]
             )
-
             translated_text = response.choices[0].message.content
             await message.channel.send(translated_text)
-
         except Exception as e:
             print("OPENAI ERROR:", e)
             await message.channel.send("❌ حدث خطأ أثناء الترجمة.")
 
     await bot.process_commands(message)
 
-# ====== RUN BOT ======
-bot.run(DISCORD_TOKEN)
+# ====== RUN ======
+if TOKEN:
+    bot.run(TOKEN)
+else:
+    print("⚠️ البوت لن يبدأ لأن DISCORD_TOKEN غير موجود")
