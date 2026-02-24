@@ -1,13 +1,10 @@
 import discord
 import requests
 import os
-import openai
-import pytesseract
-from PIL import Image
-from io import BytesIO
+from openai import OpenAI
 
 TOKEN = os.getenv("TOKEN")
-openai.api_key = os.getenv("OPENAI")
+client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -15,20 +12,17 @@ bot = discord.Client(intents=intents)
 
 def literary_prompt(text):
     return f"""
-هذا نص من إحدى المانهوا.
-
-يرجى ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
+هذا نصٌّ كوري من إحدى المانهوا. أرجو ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
 
 تعليمات التعريب:
 
-- لا تُنقل الكلمات أو الألقاب حرفيًا.
-- اختر أقرب معنى عربي حسب سياق الحوار والقصة.
+- لا تُنقل الكلمات أو الألقاب حرفيًا. اختر أقرب معنى عربي حسب سياق الحوار والقصة.
 - الأسماء الشخصية تُترك كما هي دون تغيير.
 - لا تضف أو تحذف أي حدث أو معنى.
 - حافظ على أسلوب، نبرة، وشخصية كل شخصية كما في النص الأصلي.
 - راقب الإملاء، النحو، علامات الترقيم، والهمزات بدقة.
-- اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية.
-- أخرج الترجمة فقط دون شروح.
+- اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية، مع الحفاظ على شعور النص وروحه.
+- المرجو إخراج الترجمة فقط، خالية من الشروح والتعليقات.
 
 النص:
 {text}
@@ -49,18 +43,24 @@ async def on_message(message):
 
                 await message.channel.send("📖 جارٍ استخراج النص...")
 
-                img_data = requests.get(attachment.url).content
-                image = Image.open(BytesIO(img_data))
+                img = requests.get(attachment.url)
 
-                try:
-                    raw_text = pytesseract.image_to_string(
-                        image,
-                        lang='eng+kor+jpn+chi_sim+chi_tra'
-                    )
-                except Exception as e:
+                ocr = requests.post(
+                    "https://api.ocr.space/parse/image",
+                    files={"file": img.content},
+                    data={
+                        "apikey": "K85155133088957",
+                        "language": "kor"
+                    }
+                )
+
+                result = ocr.json()
+
+                if "ParsedResults" not in result:
                     await message.channel.send("❌ فشل استخراج النص.")
-                    print(e)
                     return
+
+                raw_text = result["ParsedResults"][0]["ParsedText"]
 
                 if not raw_text.strip():
                     await message.channel.send("⚠️ لم يتم العثور على نص.")
@@ -70,13 +70,12 @@ async def on_message(message):
 
                 prompt = literary_prompt(raw_text)
 
-                gpt = openai.ChatCompletion.create(
+                response = client_ai.chat.completions.create(
                     model="gpt-4o-mini",
-                    messages=[{"role":"user","content":prompt}],
-                    temperature=0.4
+                    messages=[{"role":"user","content":prompt}]
                 )
 
-                translated = gpt['choices'][0]['message']['content']
+                translated = response.choices[0].message.content
 
                 bubbles = translated.split("\n")
 
