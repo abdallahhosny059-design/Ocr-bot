@@ -2,9 +2,12 @@ import discord
 import requests
 import os
 import openai
+import pytesseract
+from PIL import Image
+from io import BytesIO
 
 TOKEN = os.getenv("TOKEN")
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("OPENAI")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -43,28 +46,21 @@ async def on_message(message):
     if message.attachments:
         for attachment in message.attachments:
             if attachment.filename.endswith(('png','jpg','jpeg')):
+
                 await message.channel.send("📖 جارٍ استخراج النص...")
 
-                img = requests.get(attachment.url)
+                img_data = requests.get(attachment.url).content
+                image = Image.open(BytesIO(img_data))
 
-                ocr = requests.post(
-                    "https://api.ocr.space/parse/image",
-                    files={"file": img.content},
-                    data={
-                        "apikey": "K85155133088957",
-                        "language": "eng,kor,jpn,chs,cht",
-                        "isOverlayRequired": False,
-                        "OCREngine": 2
-                    }
-                )
-
-                result = ocr.json()
-
-                if "ParsedResults" not in result:
+                try:
+                    raw_text = pytesseract.image_to_string(
+                        image,
+                        lang='eng+kor+jpn+chi_sim+chi_tra'
+                    )
+                except Exception as e:
                     await message.channel.send("❌ فشل استخراج النص.")
+                    print(e)
                     return
-
-                raw_text = result["ParsedResults"][0]["ParsedText"]
 
                 if not raw_text.strip():
                     await message.channel.send("⚠️ لم يتم العثور على نص.")
