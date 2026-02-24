@@ -2,33 +2,43 @@ import discord
 from discord.ext import commands
 import requests
 import os
+from io import BytesIO
+from PIL import Image
+import pytesseract
 from openai import OpenAI
 
-# ====== ENV ======
-TOKEN = os.getenv("DISCORD_TOKEN")
+# ====== ENV VARIABLES ======
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OCR_API_KEY = os.getenv("OCR_API_KEY")
 
-if not TOKEN:
+if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN is missing")
+
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY is missing")
-if not OCR_API_KEY:
-    raise ValueError("OCR_API_KEY is missing")
 
+# ====== OPENAI CLIENT ======
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
 
-# ====== DISCORD ======
+# ====== DISCORD BOT ======
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ====== READY ======
+# ====== OCR FUNCTION ======
+def extract_text_from_image(image_url):
+    response = requests.get(image_url, timeout=20)
+    img = Image.open(BytesIO(response.content))
+    # دعم الإنجليزية والكورية واليابانية
+    text = pytesseract.image_to_string(img, lang='eng+kor+jpn')
+    return text.strip()
+
+# ====== READY EVENT ======
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-# ====== MESSAGE ======
+# ====== MESSAGE EVENT ======
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -38,35 +48,21 @@ async def on_message(message):
         return
 
     for attachment in message.attachments:
-        if not attachment.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        if not attachment.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")):
             continue
 
         await message.channel.send("📖 جارٍ استخراج النص...")
 
-        extracted_text = ""
         try:
-            img = requests.get(attachment.url, timeout=20)
-            ocr = requests.post(
-                "https://api.ocr.space/parse/image",
-                files={"file": img.content},
-                data={
-                    "apikey": OCR_API_KEY,
-                    "language": "eng+ko+jpn"  # كل اللغات اللي ممكن تحتاجها
-                },
-                timeout=30
-            )
-            result = ocr.json()
-            if "ParsedResults" in result and result["ParsedResults"]:
-                extracted_text = result["ParsedResults"][0]["ParsedText"].strip()
-            else:
-                await message.channel.send("⚠️ لم يتم العثور على نص أو حدث خطأ في OCR.")
+            extracted_text = extract_text_from_image(attachment.url)
         except Exception as e:
             print("OCR ERROR:", e)
             await message.channel.send("❌ حدث خطأ أثناء استخراج النص.")
+            continue
 
         if not extracted_text:
-            extracted_text = "[نص فارغ]"  # يمنع توقف البوت
-            await message.channel.send("⚠️ لا يوجد نص صالح، سيتم إرسال مكانه نص افتراضي.")
+            await message.channel.send("❌ لم يتم العثور على نص.")
+            continue
 
         await message.channel.send("🧠 جارٍ التعريب الأدبي...")
 
@@ -91,14 +87,15 @@ async def on_message(message):
                     {"role": "user", "content": extracted_text}
                 ]
             )
+
             translated_text = response.choices[0].message.content
             await message.channel.send(translated_text)
 
         except Exception as e:
             print("OPENAI ERROR:", e)
-            await message.channel.send("❌ حدث خطأ أثناء الترجمة. لكن البوت ما توقفش.")
+            await message.channel.send("❌ حدث خطأ أثناء الترجمة.")
 
     await bot.process_commands(message)
 
-# ====== RUN ======
-bot.run(TOKEN)
+# ====== RUN BOT ======
+bot.run(DISCORD_TOKEN)
