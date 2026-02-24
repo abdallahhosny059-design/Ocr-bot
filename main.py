@@ -40,7 +40,8 @@ async def on_message(message):
         return
 
     for attachment in message.attachments:
-        if not attachment.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+
+        if not attachment.content_type.startswith("image"):
             continue
 
         await message.channel.send("📖 جارٍ استخراج النص...")
@@ -53,12 +54,16 @@ async def on_message(message):
                 files={"file": img.content},
                 data={
                     "apikey": OCR_API_KEY,
-                    "language": "kor"
+                    "language": "eng",
+                    "OCREngine": 2,
+                    "scale": True,
+                    "isOverlayRequired": False
                 },
-                timeout=30
+                timeout=40
             )
 
             result = ocr.json()
+            print("OCR RESULT:", result)
 
             if "ParsedResults" not in result:
                 await message.channel.send("❌ فشل استخراج النص.")
@@ -88,11 +93,17 @@ async def on_message(message):
 تعليمات التعريب:
 
 لا تُنقل الكلمات أو الألقاب حرفيًا. اختر أقرب معنى عربي حسب سياق الحوار والقصة.
+
 الأسماء الشخصية تُترك كما هي دون تغيير.
+
 لا تضف أو تحذف أي حدث أو معنى.
+
 حافظ على أسلوب، نبرة، وشخصية كل شخصية كما في النص الأصلي.
+
 راقب الإملاء، النحو، علامات الترقيم، والهمزات بدقة.
+
 اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية، مع الحفاظ على شعور النص وروحه.
+
 المرجو إخراج الترجمة فقط، خالية من الشروح والتعليقات."""
                     },
                     {"role": "user", "content": extracted_text}
