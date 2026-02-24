@@ -4,12 +4,13 @@ import requests
 import os
 from openai import OpenAI
 
-# ====== ENV ======
-TOKEN = os.getenv("DISCORD_TOKEN")
+# ================== ENV ==================
+
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OCR_API_KEY = os.getenv("OCR_API_KEY")
 
-if not TOKEN:
+if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN is missing")
 
 if not OPENAI_API_KEY:
@@ -20,17 +21,21 @@ if not OCR_API_KEY:
 
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
 
-# ====== DISCORD ======
+# ================== DISCORD ==================
+
 intents = discord.Intents.default()
 intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ====== READY ======
+# ================== READY ==================
+
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-# ====== MESSAGE ======
+# ================== MESSAGE ==================
+
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -41,36 +46,51 @@ async def on_message(message):
 
     for attachment in message.attachments:
 
+        # التأكد أنه صورة
+        if not attachment.content_type or not attachment.content_type.startswith("image"):
+            continue
+
         await message.channel.send("📖 جارٍ استخراج النص...")
 
         try:
-            img = requests.get(attachment.url, timeout=20)
+            # تحميل الصورة من ديسكورد
+            img_response = requests.get(attachment.url, timeout=20)
 
-            ocr = requests.post(
+            # إرسالها إلى OCR.Space بالشكل الصحيح
+            ocr_response = requests.post(
                 "https://api.ocr.space/parse/image",
-                files={"file": img.content},
+                files={"file": ("image.png", img_response.content)},
                 data={
                     "apikey": OCR_API_KEY,
-                    "language": "eng+kor+jpn"
+                    "language": "eng",
+                    "isOverlayRequired": False
                 },
                 timeout=30
             )
 
-            result = ocr.json()
+            result = ocr_response.json()
+            print("OCR RESPONSE:", result)
 
-            if "ParsedResults" not in result:
+            # فشل من API
+            if result.get("IsErroredOnProcessing"):
                 await message.channel.send("❌ فشل استخراج النص.")
                 return
 
-            extracted_text = result["ParsedResults"][0]["ParsedText"].strip()
+            parsed_results = result.get("ParsedResults")
+
+            if not parsed_results:
+                await message.channel.send("❌ فشل استخراج النص.")
+                return
+
+            extracted_text = parsed_results[0].get("ParsedText", "").strip()
+
+            if not extracted_text:
+                await message.channel.send("❌ لم يتم العثور على نص.")
+                return
 
         except Exception as e:
             print("OCR ERROR:", e)
             await message.channel.send("❌ حدث خطأ أثناء استخراج النص.")
-            return
-
-        if not extracted_text:
-            await message.channel.send("❌ لم يتم العثور على نص.")
             return
 
         await message.channel.send("🧠 جارٍ التعريب الأدبي...")
@@ -109,5 +129,6 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ====== RUN ======
-bot.run(TOKEN)
+# ================== RUN ==================
+
+bot.run(DISCORD_TOKEN)
