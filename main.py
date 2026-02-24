@@ -25,10 +25,12 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ====== READY ======
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
+# ====== MESSAGE ======
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -39,37 +41,22 @@ async def on_message(message):
 
     for attachment in message.attachments:
 
-        # يقبل أي صورة
-        if not attachment.content_type or not attachment.content_type.startswith("image"):
-            continue
-
         await message.channel.send("📖 جارٍ استخراج النص...")
 
         try:
-            # تحميل الصورة
-            img_response = requests.get(attachment.url, timeout=20)
+            img = requests.get(attachment.url, timeout=20)
 
-            # إرسالها للـ OCR
-            ocr_response = requests.post(
+            ocr = requests.post(
                 "https://api.ocr.space/parse/image",
-                files={"file": ("image.png", img_response.content)},
+                files={"file": img.content},
                 data={
                     "apikey": OCR_API_KEY,
-                    "language": "eng",
-                    "OCREngine": 2,
-                    "scale": True
+                    "language": "eng+kor+jpn"
                 },
-                timeout=40
+                timeout=30
             )
 
-            result = ocr_response.json()
-            print("OCR RAW RESPONSE:", result)
-
-            # لو فيه خطأ من OCR
-            if result.get("IsErroredOnProcessing"):
-                print("OCR ERROR MESSAGE:", result.get("ErrorMessage"))
-                await message.channel.send("❌ فشل استخراج النص.")
-                return
+            result = ocr.json()
 
             if "ParsedResults" not in result:
                 await message.channel.send("❌ فشل استخراج النص.")
@@ -78,7 +65,7 @@ async def on_message(message):
             extracted_text = result["ParsedResults"][0]["ParsedText"].strip()
 
         except Exception as e:
-            print("OCR EXCEPTION:", e)
+            print("OCR ERROR:", e)
             await message.channel.send("❌ حدث خطأ أثناء استخراج النص.")
             return
 
@@ -89,9 +76,9 @@ async def on_message(message):
         await message.channel.send("🧠 جارٍ التعريب الأدبي...")
 
         try:
-            response = client_ai.chat.completions.create(
+            response = client_ai.responses.create(
                 model="gpt-4o-mini",
-                messages=[
+                input=[
                     {
                         "role": "system",
                         "content": """هذا نص من إحدى المانهوا. أرجو ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
@@ -106,11 +93,14 @@ async def on_message(message):
 اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية، مع الحفاظ على شعور النص وروحه.
 المرجو إخراج الترجمة فقط، خالية من الشروح والتعليقات."""
                     },
-                    {"role": "user", "content": extracted_text}
+                    {
+                        "role": "user",
+                        "content": extracted_text
+                    }
                 ]
             )
 
-            translated_text = response.choices[0].message.content
+            translated_text = response.output[0].content[0].text
             await message.channel.send(translated_text)
 
         except Exception as e:
@@ -119,4 +109,5 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# ====== RUN ======
 bot.run(TOKEN)
