@@ -3,10 +3,19 @@ import requests
 import os
 from openai import OpenAI
 
-# ====== TOKENS ======
+# ====== ENV VARIABLES ======
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OCR_API_KEY = os.getenv("OCR_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not DISCORD_TOKEN:
+    raise ValueError("DISCORD_TOKEN is missing")
+
+if not OCR_API_KEY:
+    raise ValueError("OCR_API_KEY is missing")
+
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY is missing")
 
 # ====== OPENAI CLIENT ======
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
@@ -19,17 +28,23 @@ bot = discord.Client(intents=intents)
 # ====== PROMPT ======
 def literary_prompt(text):
     return f"""
-هذا نصٌّ كوري من إحدى المانهوا. أرجو ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
+هذا نصٌّ  من إحدى المانهوا. أرجو ترجمته إلى العربية الفصحى الرفيعة مع اعتماد تعريب أدبي محكم (Localization) يصوغ المعنى بروح النص، ويحافظ على دلالته كاملة دون زيادة أو نقصان.
 
 تعليمات التعريب:
 
-- لا تُنقل الكلمات أو الألقاب حرفيًا. اختر أقرب معنى عربي حسب سياق الحوار والقصة.
-- الأسماء الشخصية تُترك كما هي دون تغيير.
-- لا تضف أو تحذف أي حدث أو معنى.
-- حافظ على أسلوب، نبرة، وشخصية كل شخصية كما في النص الأصلي.
-- راقب الإملاء، النحو، علامات الترقيم، والهمزات بدقة.
-- اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية، مع الحفاظ على شعور النص وروحه.
-- المرجو إخراج الترجمة فقط، خالية من الشروح والتعليقات.
+لا تُنقل الكلمات أو الألقاب حرفيًا. اختر أقرب معنى عربي حسب سياق الحوار والقصة.
+
+الأسماء الشخصية تُترك كما هي دون تغيير.
+
+لا تضف أو تحذف أي حدث أو معنى.
+
+حافظ على أسلوب، نبرة، وشخصية كل شخصية كما في النص الأصلي.
+
+راقب الإملاء، النحو، علامات الترقيم، والهمزات بدقة.
+
+اجعل الحوار يبدو طبيعيًا وكأنه مكتوب أصلًا بالعربية، مع الحفاظ على شعور النص وروحه.
+
+المرجو إخراج الترجمة فقط، خالية من الشروح والتعليقات.
 
 النص:
 {text}
@@ -38,7 +53,7 @@ def literary_prompt(text):
 # ====== READY ======
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
+    print(f"✅ Logged in as {bot.user}")
 
 # ====== MESSAGE ======
 @bot.event
@@ -46,57 +61,68 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    if message.attachments:
-        for attachment in message.attachments:
-            if attachment.filename.lower().endswith(('png','jpg','jpeg')):
+    if not message.attachments:
+        return
 
-                await message.channel.send("📖 جارٍ استخراج النص...")
+    for attachment in message.attachments:
+        if not attachment.filename.lower().endswith(("png", "jpg", "jpeg")):
+            continue
 
-                img = requests.get(attachment.url)
+        await message.channel.send("📖 جارٍ استخراج النص...")
 
-                ocr = requests.post(
-                    "https://api.ocr.space/parse/image",
-                    files={"file": img.content},
-                    data={
-                        "apikey": OCR_API_KEY,
-                        "language": "kor"
-                    }
-                )
+        try:
+            img = requests.get(attachment.url, timeout=20)
 
-                result = ocr.json()
+            ocr = requests.post(
+                "https://api.ocr.space/parse/image",
+                files={"file": img.content},
+                data={
+                    "apikey": OCR_API_KEY,
+                    "language": "kor"
+                },
+                timeout=30
+            )
 
-                if "ParsedResults" not in result:
-                    await message.channel.send("❌ فشل استخراج النص.")
-                    return
+            result = ocr.json()
 
-                raw_text = result["ParsedResults"][0]["ParsedText"]
+            if "ParsedResults" not in result:
+                await message.channel.send("❌ فشل استخراج النص.")
+                return
 
-                if not raw_text.strip():
-                    await message.channel.send("⚠️ لم يتم العثور على نص.")
-                    return
+            raw_text = result["ParsedResults"][0]["ParsedText"]
 
-                await message.channel.send("🧠 جارٍ التعريب الأدبي...")
+            if not raw_text.strip():
+                await message.channel.send("⚠️ لم يتم العثور على نص.")
+                return
 
-                prompt = literary_prompt(raw_text)
+        except Exception as e:
+            await message.channel.send("❌ حدث خطأ أثناء OCR.")
+            print("OCR ERROR:", e)
+            return
 
-                response = client_ai.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role":"user","content":prompt}]
-                )
+        await message.channel.send("🧠 جارٍ التعريب الأدبي...")
 
-                translated = response.choices[0].message.content
+        try:
+            response = client_ai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": literary_prompt(raw_text)}]
+            )
 
-                bubbles = translated.split("\n")
+            translated = response.choices[0].message.content
 
-                formatted = ""
-                count = 1
+        except Exception as e:
+            await message.channel.send("❌ حدث خطأ أثناء الترجمة.")
+            print("OPENAI ERROR:", e)
+            return
 
-                for b in bubbles:
-                    if b.strip():
-                        formatted += f"【فقاعة {count}】\n{b}\n\n"
-                        count += 1
+        bubbles = [b.strip() for b in translated.split("\n") if b.strip()]
 
-                await message.channel.send(formatted)
+        formatted = ""
+        for i, bubble in enumerate(bubbles, start=1):
+            formatted += f"【فقاعة {i}】\n{bubble}\n\n"
+
+        await message.channel.send(formatted)
+
 
 # ====== RUN ======
 bot.run(DISCORD_TOKEN)
